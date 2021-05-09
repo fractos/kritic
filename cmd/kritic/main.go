@@ -7,10 +7,13 @@ import (
 	"path/filepath"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+
+	color "github.com/fatih/color"
 )
 
 func main() {
@@ -20,6 +23,9 @@ func main() {
 	} else {
 		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	}
+	noColor := flag.Bool("no-color", false, "(Optional) disable ANSI colors")
+	watch := flag.Bool("watch", false, "(Optional) loop and show latest values every 5 seconds")
+
 	flag.Parse()
 
 	// use the current context in kubeconfig
@@ -40,25 +46,75 @@ func main() {
 		if err != nil {
 			panic(err.Error())
 		}
-		fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
-
 		nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			panic(err.Error())
 		}
+
+		fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
+
 		fmt.Printf("There are %d nodes in the cluster\n", len(nodes.Items))
+
 		for i := 0; i < len(nodes.Items); i++ {
 			node := nodes.Items[i]
-			fmt.Printf("Node %s\n", node.Name)
+			if *noColor {
+				fmt.Printf("Node %s\n", node.Name)
+			} else {
+				fmt.Printf("Node %s\n", color.HiBlueString(node.Name))
+			}
 
-			for j := 0; j < len(pods.Items); j++ {
-				pod := pods.Items[j]
-				if pod.Spec.NodeName == node.Name {
-					fmt.Printf("  pod: %s (%s)\n", pod.Name, pod.Status.Phase)
+			daemonSets := getNodePodsByKind(node, pods.Items, "DaemonSet")
+			deployments := getNodePodsByKind(node, pods.Items, "ReplicaSet")
+
+			for j := 0; j < len(daemonSets); j++ {
+				daemonSet := daemonSets[j]
+				if *noColor {
+					fmt.Printf("daemonSet: %s (%s)\n", daemonSet.Name, daemonSet.Status.Phase)
+				} else {
+					if daemonSet.Status.Phase == "Pending" {
+						fmt.Printf("daemonSet: %s (%s)\n", color.YellowString(daemonSet.Name), daemonSet.Status.Phase)
+					} else {
+						fmt.Printf("daemonSet: %s (%s)\n", color.HiYellowString(daemonSet.Name), daemonSet.Status.Phase)
+					}
+				}
+			}
+
+			for j := 0; j < len(deployments); j++ {
+				deployment := deployments[j]
+				if *noColor {
+					fmt.Printf("replicaSet: %s (%s)\n", deployment.Name, deployment.Status.Phase)
+				} else {
+					if deployment.Status.Phase == "Pending" {
+						fmt.Printf("replicaSet: %s (%s)\n", color.GreenString(deployment.Name), deployment.Status.Phase)
+					} else {
+						fmt.Printf("replicaSet: %s (%s)\n", color.HiGreenString(deployment.Name), deployment.Status.Phase)
+					}
 				}
 			}
 		}
 
-		time.Sleep(5 * time.Second)
+		if *watch {
+
+			time.Sleep(5 * time.Second)
+		} else {
+			break
+		}
 	}
+}
+
+func getNodePodsByKind(node v1.Node, pods []v1.Pod, kind string) []v1.Pod {
+	results := []v1.Pod{}
+
+	for i := 0; i < len(pods); i++ {
+		pod := pods[i]
+		if pod.Spec.NodeName == node.Name {
+			if len(pod.OwnerReferences) > 0 {
+				if pod.OwnerReferences[0].Kind == kind {
+					results = append(results, pod)
+				}
+			}
+		}
+	}
+
+	return results
 }
