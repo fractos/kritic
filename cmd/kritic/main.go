@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -25,6 +26,7 @@ func main() {
 	}
 	noColor := flag.Bool("no-color", false, "(Optional) disable ANSI colors")
 	watch := flag.Bool("watch", false, "(Optional) loop and show latest values every 5 seconds")
+	nodeLabel := flag.String("nodeLabel", "", "(Optional) label and value of node to inspect (e.g. label=value")
 
 	flag.Parse()
 
@@ -55,8 +57,25 @@ func main() {
 
 		fmt.Printf("There are %d nodes in the cluster\n", len(nodes.Items))
 
+		var splitNodeLabel []string
+
+		if len(*nodeLabel) > 0 {
+			splitNodeLabel = strings.Split(*nodeLabel, "=")
+		}
+
 		for i := 0; i < len(nodes.Items); i++ {
 			node := nodes.Items[i]
+			if len(*nodeLabel) > 0 {
+				if nodeLabelValue, ok := node.Labels[splitNodeLabel[0]]; ok {
+					if nodeLabelValue == splitNodeLabel[1] {
+						// include this node
+					} else {
+						continue
+					}
+				} else {
+					continue
+				}
+			}
 			if *noColor {
 				fmt.Printf("Node %s\n", node.Name)
 			} else {
@@ -64,7 +83,8 @@ func main() {
 			}
 
 			daemonSets := getNodePodsByKind(node, pods.Items, "DaemonSet")
-			deployments := getNodePodsByKind(node, pods.Items, "ReplicaSet")
+			replicaSets := getNodePodsByKind(node, pods.Items, "ReplicaSet")
+			actualPods := getNodePodsByKind(node, pods.Items, "Pod")
 
 			for j := 0; j < len(daemonSets); j++ {
 				daemonSet := daemonSets[j]
@@ -79,15 +99,28 @@ func main() {
 				}
 			}
 
-			for j := 0; j < len(deployments); j++ {
-				deployment := deployments[j]
+			for j := 0; j < len(replicaSets); j++ {
+				replicaSet := replicaSets[j]
 				if *noColor {
-					fmt.Printf("replicaSet: %s (%s)\n", deployment.Name, deployment.Status.Phase)
+					fmt.Printf("replicaSet: %s (%s)\n", replicaSet.Name, replicaSet.Status.Phase)
 				} else {
-					if deployment.Status.Phase == "Pending" {
-						fmt.Printf("replicaSet: %s (%s)\n", color.GreenString(deployment.Name), deployment.Status.Phase)
+					if replicaSet.Status.Phase == "Pending" {
+						fmt.Printf("replicaSet: %s (%s)\n", color.GreenString(replicaSet.Name), replicaSet.Status.Phase)
 					} else {
-						fmt.Printf("replicaSet: %s (%s)\n", color.HiGreenString(deployment.Name), deployment.Status.Phase)
+						fmt.Printf("replicaSet: %s (%s)\n", color.HiGreenString(replicaSet.Name), replicaSet.Status.Phase)
+					}
+				}
+			}
+
+			for j := 0; j < len(actualPods); j++ {
+				pod := actualPods[j]
+				if *noColor {
+					fmt.Printf("pod: %s (%s)\n", pod.Name, pod.Status.Phase)
+				} else {
+					if pod.Status.Phase == "Pending" {
+						fmt.Printf("pod: %s (%s)\n", color.GreenString(pod.Name), pod.Status.Phase)
+					} else {
+						fmt.Printf("pod: %s (%s)\n", color.HiGreenString(pod.Name), pod.Status.Phase)
 					}
 				}
 			}
