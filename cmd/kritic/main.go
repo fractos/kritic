@@ -67,15 +67,13 @@ func main() {
 			node := nodes.Items[i]
 			if len(*nodeLabel) > 0 {
 				if nodeLabelValue, ok := node.Labels[splitNodeLabel[0]]; ok {
-					if nodeLabelValue == splitNodeLabel[1] {
-						// include this node
-					} else {
+					if nodeLabelValue != splitNodeLabel[1] {
+						// don't include this node
 						continue
 					}
-				} else {
-					continue
 				}
 			}
+
 			if *noColor {
 				fmt.Printf("Node %s\n", node.Name)
 			} else {
@@ -84,7 +82,7 @@ func main() {
 
 			daemonSets := getNodePodsByKind(node, pods.Items, "DaemonSet")
 			replicaSets := getNodePodsByKind(node, pods.Items, "ReplicaSet")
-			actualPods := getNodePodsByKind(node, pods.Items, "Pod")
+			jobs := getNodePodsByKind(node, pods.Items, "Job")
 
 			for j := 0; j < len(daemonSets); j++ {
 				daemonSet := daemonSets[j]
@@ -112,22 +110,21 @@ func main() {
 				}
 			}
 
-			for j := 0; j < len(actualPods); j++ {
-				pod := actualPods[j]
+			for j := 0; j < len(jobs); j++ {
+				job := jobs[j]
 				if *noColor {
-					fmt.Printf("pod: %s (%s)\n", pod.Name, pod.Status.Phase)
+					fmt.Printf("job: %s (%s)\n", job.Name, job.Status.Phase)
 				} else {
-					if pod.Status.Phase == "Pending" {
-						fmt.Printf("pod: %s (%s)\n", color.GreenString(pod.Name), pod.Status.Phase)
+					if job.Status.Phase == "Pending" || job.Status.Phase == "Succeeded" {
+						fmt.Printf("job: %s (%s)\n", color.CyanString(job.Name), job.Status.Phase)
 					} else {
-						fmt.Printf("pod: %s (%s)\n", color.HiGreenString(pod.Name), pod.Status.Phase)
+						fmt.Printf("job: %s (%s)\n", color.HiCyanString(job.Name), job.Status.Phase)
 					}
 				}
 			}
 		}
 
 		if *watch {
-
 			time.Sleep(5 * time.Second)
 		} else {
 			break
