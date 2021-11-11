@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,10 @@ func main() {
 	noColor := flag.Bool("no-color", false, "(Optional) disable ANSI colors")
 	watch := flag.Bool("watch", false, "(Optional) loop and show latest values every 5 seconds")
 	nodeLabel := flag.String("nodeLabel", "", "(Optional) label and value of node to inspect (e.g. label=value")
+	justNodes := flag.Bool("justNodes", false, "(Optional) only show information about nodes")
+	showNodeLabels := flag.Bool("showNodeLabels", false, "(Optional) show node labels")
+	filterNodeLabels := flag.String("filterNodeLabels", "", "(Optional) filter node labels by this key")
+	justTotals := flag.Bool("justTotals", false, "(Optional) only show totals of resource types per node")
 
 	flag.Parse()
 
@@ -80,45 +85,92 @@ func main() {
 				fmt.Printf("Node %s\n", color.HiBlueString(node.Name))
 			}
 
-			daemonSets := getNodePodsByKind(node, pods.Items, "DaemonSet")
-			replicaSets := getNodePodsByKind(node, pods.Items, "ReplicaSet")
-			jobs := getNodePodsByKind(node, pods.Items, "Job")
-
-			for j := 0; j < len(daemonSets); j++ {
-				daemonSet := daemonSets[j]
-				if *noColor {
-					fmt.Printf("daemonSet: %s (%s)\n", daemonSet.Name, daemonSet.Status.Phase)
-				} else {
-					if daemonSet.Status.Phase == "Pending" {
-						fmt.Printf("daemonSet: %s (%s)\n", color.YellowString(daemonSet.Name), daemonSet.Status.Phase)
+			if *showNodeLabels {
+				labelKeys := make([]string, 0)
+				for labelKey, _ := range node.Labels {
+					labelKeys = append(labelKeys, labelKey)
+				}
+				sort.Strings(labelKeys)
+				for _, k := range labelKeys {
+					if len(*filterNodeLabels) > 0 {
+						if *filterNodeLabels != k {
+							// we are only interested in this particular key
+							continue
+						}
+					}
+					if *noColor {
+						fmt.Printf("  label %s=%s\n", k, node.Labels[k])
 					} else {
-						fmt.Printf("daemonSet: %s (%s)\n", color.HiYellowString(daemonSet.Name), daemonSet.Status.Phase)
+						fmt.Printf("  label %s=%s\n", color.HiGreenString(k), color.GreenString(node.Labels[k]))
 					}
 				}
 			}
 
-			for j := 0; j < len(replicaSets); j++ {
-				replicaSet := replicaSets[j]
-				if *noColor {
-					fmt.Printf("replicaSet: %s (%s)\n", replicaSet.Name, replicaSet.Status.Phase)
-				} else {
-					if replicaSet.Status.Phase == "Pending" {
-						fmt.Printf("replicaSet: %s (%s)\n", color.GreenString(replicaSet.Name), replicaSet.Status.Phase)
+			if !*justNodes {
+				daemonSets := getNodePodsByKind(node, pods.Items, "DaemonSet")
+				replicaSets := getNodePodsByKind(node, pods.Items, "ReplicaSet")
+				jobs := getNodePodsByKind(node, pods.Items, "Job")
+
+				if *justTotals {
+					if *noColor {
+						fmt.Printf("daemonSets: %d\n", len(daemonSets))
 					} else {
-						fmt.Printf("replicaSet: %s (%s)\n", color.HiGreenString(replicaSet.Name), replicaSet.Status.Phase)
+						fmt.Printf("daemonSets: %s\n", color.HiYellowString(fmt.Sprintf("%d", len(daemonSets))))
+					}
+				} else {
+					for j := 0; j < len(daemonSets); j++ {
+						daemonSet := daemonSets[j]
+						if *noColor {
+							fmt.Printf("daemonSet: %s (%s)\n", daemonSet.Name, daemonSet.Status.Phase)
+						} else {
+							if daemonSet.Status.Phase == "Pending" {
+								fmt.Printf("daemonSet: %s (%s)\n", color.YellowString(daemonSet.Name), daemonSet.Status.Phase)
+							} else {
+								fmt.Printf("daemonSet: %s (%s)\n", color.HiYellowString(daemonSet.Name), daemonSet.Status.Phase)
+							}
+						}
 					}
 				}
-			}
 
-			for j := 0; j < len(jobs); j++ {
-				job := jobs[j]
-				if *noColor {
-					fmt.Printf("job: %s (%s)\n", job.Name, job.Status.Phase)
-				} else {
-					if job.Status.Phase == "Pending" || job.Status.Phase == "Succeeded" {
-						fmt.Printf("job: %s (%s)\n", color.CyanString(job.Name), job.Status.Phase)
+				if *justTotals {
+					if *noColor {
+						fmt.Printf("replicaSets: %d\n", len(replicaSets))
 					} else {
-						fmt.Printf("job: %s (%s)\n", color.HiCyanString(job.Name), job.Status.Phase)
+						fmt.Printf("replicaSets: %s\n", color.HiGreenString(fmt.Sprintf("%d", len(replicaSets))))
+					}
+				} else {
+					for j := 0; j < len(replicaSets); j++ {
+						replicaSet := replicaSets[j]
+						if *noColor {
+							fmt.Printf("replicaSet: %s (%s)\n", replicaSet.Name, replicaSet.Status.Phase)
+						} else {
+							if replicaSet.Status.Phase == "Pending" {
+								fmt.Printf("replicaSet: %s (%s)\n", color.GreenString(replicaSet.Name), replicaSet.Status.Phase)
+							} else {
+								fmt.Printf("replicaSet: %s (%s)\n", color.HiGreenString(replicaSet.Name), replicaSet.Status.Phase)
+							}
+						}
+					}
+				}
+
+				if *justTotals {
+					if *noColor {
+						fmt.Printf("jobs: %d\n", len(jobs))
+					} else {
+						fmt.Printf("jobs: %s\n", color.HiCyanString(fmt.Sprintf("%d", len(jobs))))
+					}
+				} else {
+					for j := 0; j < len(jobs); j++ {
+						job := jobs[j]
+						if *noColor {
+							fmt.Printf("job: %s (%s)\n", job.Name, job.Status.Phase)
+						} else {
+							if job.Status.Phase == "Pending" || job.Status.Phase == "Succeeded" {
+								fmt.Printf("job: %s (%s)\n", color.CyanString(job.Name), job.Status.Phase)
+							} else {
+								fmt.Printf("job: %s (%s)\n", color.HiCyanString(job.Name), job.Status.Phase)
+							}
+						}
 					}
 				}
 			}
@@ -126,6 +178,7 @@ func main() {
 
 		if *watch {
 			time.Sleep(5 * time.Second)
+			fmt.Printf("\n")
 		} else {
 			break
 		}
